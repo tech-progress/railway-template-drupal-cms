@@ -43,4 +43,4 @@ Uploads, private files and the configuration sync directory live on a 5 GB volum
 
 Railway runs the site and its database in one project, with private networking, persistent volumes and HTTPS on a generated domain. You get a working Drupal CMS site in about two minutes, with no installer to click through. Every image is pinned and every secret is generated.
 
-This is a community template, not an official Drupal project release, and it is not affiliated with or endorsed by Dries Buytaert or the Drupal Association. Drupal is a registered trademark of Dries Buytaert.
+This is a community template by Tech Progress, not an official Drupal project release, and it is not affiliated with or endorsed by Dries Buytaert or the Drupal Association. Drupal is a registered trademark of Dries Buytaert.

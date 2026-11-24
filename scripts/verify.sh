@@ -128,7 +128,7 @@ done
 notice='Drupal is a registered trademark of Dries Buytaert.'
 for file in README.md MARKETPLACE.md; do
   grep -qF "${notice}" "${file}" || fail "${file} lacks the trademark notice"
-  grep -q 'not affiliated with or endorsed by Dries Buytaert or the Drupal Association' "${file}" || fail "${file} lacks the independence statement"
+  grep -q "not affiliated with or endorsed by Dries Buytaert or the Drupal Association" "${file}" || fail "${file} lacks the independence statement"
 done
 description="$(jq -r .description template-listing.json)"
 (( ${#description} >= 45 && ${#description} <= 75 )) || fail "the listing description must be 45-75 characters"

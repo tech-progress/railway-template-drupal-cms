@@ -2,7 +2,7 @@
 
 A Railway template for [Drupal CMS](https://www.drupal.org/project/cms) 2.2.10, the ready-to-use distribution of [Drupal](https://www.drupal.org) core 11.4.13, on [PostgreSQL](https://www.postgresql.org) 18.7. The site installs itself on the first boot with [Drush](https://www.drush.org) and the Drupal CMS Starter site template. It creates an administrator with a generated password and keeps uploads and private files on a volume.
 
-This is a community template. It is not an official Drupal project release and is not affiliated with or endorsed by Dries Buytaert or the Drupal Association. Drupal is a registered trademark of Dries Buytaert.
+This is a community template published by Tech Progress (listed on Railway as "Drupal CMS by Tech Progress"). It is not an official Drupal project release and is not affiliated with or endorsed by Dries Buytaert or the Drupal Association. Drupal is a registered trademark of Dries Buytaert.
 
 Upstream projects:
 
