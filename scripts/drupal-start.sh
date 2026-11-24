@@ -33,7 +33,8 @@ drush=("${as_www[@]}" php -d memory_limit=1024M "${app}/vendor/bin/drush.php" --
 # bash as PID 1 runs a trap only after its foreground child ends.
 child=""
 stop_during_setup() {
-  log "stopped during setup"
+  # stderr: the trap can run while run()'s stdout is redirected to a file.
+  log "stopped during setup" >&2
   [[ -n "${child}" ]] && kill -TERM "${child}" 2>/dev/null && wait "${child}" 2>/dev/null
   exit 143
 }
@@ -137,7 +138,10 @@ log "PostgreSQL accepts Drupal's credentials"
 
 db_state() {
   local out
-  out="$(php "${helpers}/drupal-db.php" state)" || fail "cannot read the database state"
+  # Through run (a background child) so a stop signal is handled even while a
+  # query waits; the answer goes through a root-only file.
+  run php "${helpers}/drupal-db.php" state > /run/drupal-start-db-state || fail "cannot read the database state"
+  out="$(</run/drupal-start-db-state)"
   [[ "${out}" =~ ^tables=([0-9]+)\ installed=(yes|no)$ ]] || fail "unexpected database state"
   tables="${BASH_REMATCH[1]}" installed="${BASH_REMATCH[2]}"
 }
@@ -156,7 +160,7 @@ started_nonce() {
 }
 owns_database() {
   local nonce; nonce="$(started_nonce)"
-  [[ -n "${nonce}" ]] && php "${helpers}/drupal-db.php" owns "${nonce}"
+  [[ -n "${nonce}" ]] && run php "${helpers}/drupal-db.php" owns "${nonce}"
 }
 
 provision() {
@@ -166,7 +170,7 @@ provision() {
   [[ "${installed}" == yes ]] || fail "the installer did not record a finished installation"
   mark installed
   rm -f "${state}/install-started"
-  php "${helpers}/drupal-db.php" release || fail "could not remove the install claim"
+  run php "${helpers}/drupal-db.php" release || fail "could not remove the install claim"
   provisioned=1
   log "Drupal CMS is installed; sign in as ${DRUPAL_ADMIN_USER} at /user/login"
 }
@@ -185,7 +189,7 @@ install_site() {
     [[ -n "${nonce}" ]] || nonce="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     printf 'nonce=%s\n' "${nonce}" > "${state}/install-started.tmp" && mv -f "${state}/install-started.tmp" "${state}/install-started"
   fi
-  php "${helpers}/drupal-db.php" claim "${nonce}" || fail "could not record the install claim"
+  run php "${helpers}/drupal-db.php" claim "${nonce}" || fail "could not record the install claim"
   log "installing Drupal CMS with the Starter site template (first boot)"
   # site:install gets a throwaway password; provision() sets the real one from
   # the environment, so DRUPAL_ADMIN_PASSWORD never appears in a command line.
@@ -208,7 +212,7 @@ if [[ -e "${state}/installed" ]]; then
   rm -f "${state}/install-started"
   # A stop between recording the install and releasing the claim leaves the
   # claim table behind; drop it.
-  php "${helpers}/drupal-db.php" release || fail "could not remove the install claim"
+  run php "${helpers}/drupal-db.php" release || fail "could not remove the install claim"
 elif [[ -e "${state}/install-started" ]]; then
   if [[ "${installed}" == yes ]]; then
     owns_database \

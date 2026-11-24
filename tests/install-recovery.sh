@@ -14,7 +14,8 @@
 #      without records, is refused and left untouched;
 #   3b. DRUPAL_RESET_ADMIN_PASSWORD=1 restores the configured password;
 #   6, 7. an install record left on a volume never clears or re-provisions a
-#      database the install did not start on.
+#      database the install did not start on;
+#   8. a stop during a database query that waits on a lock is handled at once.
 # Usage: ./tests/install-recovery.sh [IMAGE]   (default drupal-cms-template:local)
 set -euo pipefail
 exec </dev/null
@@ -189,4 +190,20 @@ start c
 wait_log "serving on port 80" 120
 password_is "${other_password}" || fail "case 7: the other site's administrator was changed"
 echo "install-recovery: ok 7 an install record never re-provisions another finished site"
+
+# 8. A stop while a database query waits on a lock (here the state query, with
+# key_value locked by another session) ends the container at once instead of
+# waiting for the kill timeout: every helper call runs under the stop trap.
+docker stop drupal-recovery-web >/dev/null
+docker exec -d drupal-recovery-pg psql -U drupal -d drupal -c 'begin; lock table key_value in access exclusive mode; select pg_sleep(120);'
+sleep 2
+start c
+wait_log "PostgreSQL accepts Drupal's credentials"
+sleep 3
+started=${SECONDS}
+docker stop -t 20 drupal-recovery-web >/dev/null
+(( SECONDS - started <= 3 )) || fail "case 8: the stop took $((SECONDS - started))s"
+grep -q 'stopped during setup' <<<"$(docker logs drupal-recovery-web 2>&1)" || fail "case 8: the stop trap did not run"
+docker exec drupal-recovery-pg psql -U drupal -d drupal -qAtc "select pg_terminate_backend(pid) from pg_stat_activity where query like '%pg_sleep%' and pid <> pg_backend_pid()" >/dev/null
+echo "install-recovery: ok 8 a stop during a blocked database query ends the container at once"
 echo "install-recovery: passed"

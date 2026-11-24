@@ -1,6 +1,6 @@
 # Upgrading
 
-Template versions follow `VERSION` and `CHANGELOG.md`. The Drupal CMS service builds the `release-v1` branch of `tech-progress/railway-template-drupal-cms`. A redeploy builds the branch's current release, and the start wrapper then runs `drush updatedb` before Apache starts. A failed update stops the boot and leaves the previous deployment serving.
+Template versions follow `VERSION` and `CHANGELOG.md`. New deployments build the current `release-v1` commit of `tech-progress/railway-template-drupal-cms`; an existing deployment stays on the commit it was created from, and a redeploy rebuilds that commit. Apply a newer release through Railway's template update notification, or eject and merge it. When a new build boots, the start wrapper runs `drush updatedb` before Apache starts; a failed update stops the boot and leaves the previous deployment serving.
 
 Before an upgrade, back up the PostgreSQL volume (or run `pg_dump`) and the Drupal CMS volume.
 

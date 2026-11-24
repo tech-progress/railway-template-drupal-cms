@@ -95,7 +95,7 @@ Custom code goes in `site/web/modules/custom` and `site/web/themes/custom`; the 
 
 ## Updates
 
-Template releases update Drupal CMS, Drupal core, PHP and PostgreSQL pins together. They are published on the `release-v1` branch with a `vX.Y.Z` tag (see `CHANGELOG.md` and `UPGRADE.md`). A redeploy of the `Drupal CMS` service builds the branch's current release, and the start wrapper runs `drush updatedb` before the site opens. On an ejected repository, run `composer update "drupal/core-*" --with-all-dependencies` in `site/` for Drupal core security releases, or merge the template's release.
+Template releases update Drupal CMS, Drupal core, PHP and PostgreSQL pins together. They are published on `main` and `release-v1` with a `vX.Y.Z` tag (see `CHANGELOG.md` and `UPGRADE.md`). A deployment stays on the commit it was created from: redeploying the `Drupal CMS` service rebuilds that same commit. Railway notifies a project when a GitHub-based template's repository receives an update, and you choose when to apply it. On an ejected repository, merge the template's release, or run `composer update "drupal/core-*" --with-all-dependencies` in `site/` for a Drupal core security release, and push. On every boot of a new build the start wrapper runs `drush updatedb` before the site opens.
 
 ## Security notes
 
