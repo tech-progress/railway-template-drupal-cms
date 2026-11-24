@@ -13,9 +13,20 @@
  *          public schema, and whether Drupal's installer recorded the
  *          install_task state as "done" (its own "installation finished" flag)
  *   reset  drop and recreate the public schema (an interrupted first install)
+ *   claim NONCE   record that this wrapper started an install on this database
+ *                 (table railway_template_install_claim)
+ *   owns NONCE    exit 0 only when that claim exists with exactly NONCE, so an
+ *                 install record on the volume never authorizes changes to a
+ *                 database the install did not start on
+ *   release       drop the claim once the install is finished
  */
 
 $command = $argv[1] ?? '';
+$nonce = $argv[2] ?? '';
+if (in_array($command, ['claim', 'owns'], TRUE) && !preg_match('/^[0-9a-f]{32}$/', $nonce)) {
+  fwrite(STDERR, "drupal-db: {$command} needs a 32-character hexadecimal nonce\n");
+  exit(64);
+}
 $get = static function (string $name): string {
   $value = getenv($name);
   return $value === FALSE ? '' : $value;
@@ -63,8 +74,28 @@ try {
       $pdo->exec('CREATE SCHEMA public');
       exit(0);
 
+    case 'claim':
+      $pdo->exec('CREATE TABLE IF NOT EXISTS public.railway_template_install_claim (nonce text PRIMARY KEY)');
+      $pdo->prepare('INSERT INTO public.railway_template_install_claim (nonce) VALUES (?) ON CONFLICT DO NOTHING')->execute([$nonce]);
+      exit(0);
+
+    case 'owns':
+      $exists = $pdo->query("SELECT to_regclass('public.railway_template_install_claim') IS NOT NULL")->fetchColumn();
+      if (!($exists === TRUE || $exists === 't' || $exists === 1 || $exists === '1')) {
+        exit(1);
+      }
+      $query = $pdo->prepare('SELECT count(*) FROM public.railway_template_install_claim WHERE nonce = ?');
+      $query->execute([$nonce]);
+      $rows = (int) $query->fetchColumn();
+      $all = (int) $pdo->query('SELECT count(*) FROM public.railway_template_install_claim')->fetchColumn();
+      exit($rows === 1 && $all === 1 ? 0 : 1);
+
+    case 'release':
+      $pdo->exec('DROP TABLE IF EXISTS public.railway_template_install_claim');
+      exit(0);
+
     default:
-      fwrite(STDERR, "drupal-db: usage: drupal-db.php ping|state|reset\n");
+      fwrite(STDERR, "drupal-db: usage: drupal-db.php ping|state|reset|claim NONCE|owns NONCE|release\n");
       exit(64);
   }
 }

@@ -10,8 +10,9 @@
  * after the install finished runs it once more.
  *
  * DRUPAL_PROVISION_MODE=reset (DRUPAL_RESET_ADMIN_PASSWORD=1 on an installed
- * site) sets only the password, unblocks the account and clears its failed
- * sign-in records; the name and email stay as the administrator left them.
+ * site) sets only the password, unblocks the account and clears its own
+ * per-account failed sign-in records; the name and email stay as the
+ * administrator left them.
  */
 
 use Drupal\user\Entity\User;
@@ -43,7 +44,10 @@ $admin->setPassword($password);
 $admin->activate();
 $admin->save();
 if ($mode === 'reset' && \Drupal::database()->schema()->tableExists('flood')) {
-  \Drupal::database()->delete('flood')->condition('event', 'user.failed_login_%', 'LIKE')->execute();
+  // Only user 1's per-account records ("1" or "1-<address>"); other
+  // accounts' blocks and the per-address limit stay in place.
+  $or = \Drupal::database()->condition('OR')->condition('identifier', '1')->condition('identifier', '1-%', 'LIKE');
+  \Drupal::database()->delete('flood')->condition('event', 'user.failed_login_user')->condition($or)->execute();
 }
 
 // Read back what was stored: the account is active, has the expected name and

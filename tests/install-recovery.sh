@@ -12,7 +12,9 @@
 #      (exit 64): never reinstall over a site's files;
 #   5. a database with tables but no finished installation, and a volume
 #      without records, is refused and left untouched;
-#   3b. DRUPAL_RESET_ADMIN_PASSWORD=1 restores the configured password.
+#   3b. DRUPAL_RESET_ADMIN_PASSWORD=1 restores the configured password;
+#   6, 7. an install record left on a volume never clears or re-provisions a
+#      database the install did not start on.
 # Usage: ./tests/install-recovery.sh [IMAGE]   (default drupal-cms-template:local)
 set -euo pipefail
 exec </dev/null
@@ -81,7 +83,12 @@ echo "install-recovery: ok 1 an install killed midway is cleared and repeated"
 # 2. Finished install, unfinished provisioning.
 drush user:password admin "${other_password}" >/dev/null 2>&1
 docker stop drupal-recovery-web >/dev/null
-docker run --rm -v drupal-recovery-a:/v --entrypoint /bin/sh "${image}" -c 'mv /v/template-state/installed /v/template-state/install-started'
+# The state a crash between site:install and provisioning leaves: the
+# install-started record and the database's claim with the same nonce.
+docker run --rm -v drupal-recovery-a:/v --entrypoint /bin/sh "${image}" -c \
+  'rm -f /v/template-state/installed; printf "nonce=00112233445566778899aabbccddeeff\n" > /v/template-state/install-started'
+docker exec drupal-recovery-pg psql -U drupal -d drupal -qc \
+  "create table railway_template_install_claim (nonce text primary key); insert into railway_template_install_claim values ('00112233445566778899aabbccddeeff')"
 start a
 wait_log "resuming an install that finished before the last stop"
 wait_log "serving on port 80" 120
@@ -101,17 +108,33 @@ echo "install-recovery: ok 3 an existing complete database is adopted without ch
 
 # 3b. DRUPAL_RESET_ADMIN_PASSWORD=1 on an installed site gives user 1 the
 # configured password again; without it the next boot leaves it alone.
+drush php:eval 'foreach (["1-198.51.100.7", "1", "2-198.51.100.7"] as $id) { \Drupal::flood()->register("user.failed_login_user", 21600, $id); } \Drupal::flood()->register("user.failed_login_ip", 3600, "198.51.100.7");' >/dev/null
+flood() { docker exec drupal-recovery-pg psql -U drupal -d drupal -Atc "select event || ':' || identifier from flood order by 1" | tr '\n' ' '; }
 docker stop drupal-recovery-web >/dev/null
 start b -e DRUPAL_RESET_ADMIN_PASSWORD=1
 wait_log "resetting the password of user 1"
 wait_log "serving on port 80" 120
 password_is "${admin_password}" || fail "case 3b: the reset did not restore the configured password"
+[[ "$(flood)" == "user.failed_login_ip:198.51.100.7 user.failed_login_user:2-198.51.100.7 " ]] || fail "case 3b: flood records after the reset: $(flood)"
 drush user:password admin "${other_password}" >/dev/null 2>&1
 docker stop drupal-recovery-web >/dev/null
 start b
 wait_log "serving on port 80" 120
 password_is "${other_password}" || fail "case 3b: a boot without the reset variable changed the password"
 echo "install-recovery: ok 3b DRUPAL_RESET_ADMIN_PASSWORD=1 restores the configured password, and only while it is set"
+
+# 3c. The reset also applies on the boot that adopts a database (a fresh
+# volume, here volume c before case 5 uses it).
+docker stop drupal-recovery-web >/dev/null
+start c -e DRUPAL_RESET_ADMIN_PASSWORD=1
+wait_log "adopting the existing Drupal database"
+wait_log "serving on port 80" 120
+password_is "${admin_password}" || fail "case 3c: the reset was skipped on the adopting boot"
+docker stop drupal-recovery-web >/dev/null
+docker run --rm -v drupal-recovery-c:/v --entrypoint /bin/sh "${image}" -c 'rm -rf /v/template-state'
+start b
+wait_log "serving on port 80" 120
+echo "install-recovery: ok 3c the reset applies on an adopting boot too"
 
 # 4. Installed record, empty database.
 docker stop drupal-recovery-web >/dev/null
@@ -126,4 +149,33 @@ refused c 5 "refusing to change it"
 [[ "$(docker exec drupal-recovery-pg psql -U drupal -d drupal -Atc 'select id from unrelated')" == 42 ]] || fail "case 5: the unrelated table changed"
 [[ "$(records c)" == "" ]] || fail "case 5: the refused start wrote a record: $(records c)"
 echo "install-recovery: ok 5 a database with unrelated tables is refused and left untouched"
+
+# 6. An interrupted install's record on the volume never authorizes clearing a
+# database it did not start on: volume a gets an install-started record (with
+# its own nonce), and the database still holds only the unrelated table.
+docker run --rm -v drupal-recovery-a:/v --entrypoint /bin/sh "${image}" -c \
+  'rm -f /v/template-state/installed; printf "nonce=0123456789abcdef0123456789abcdef\n" > /v/template-state/install-started'
+refused a 6 "did not start on it; refusing to change it"
+[[ "$(docker exec drupal-recovery-pg psql -U drupal -d drupal -Atc 'select id from unrelated')" == 42 ]] || fail "case 6: the unrelated table changed"
+# The same record with no nonce at all is refused as well.
+docker run --rm -v drupal-recovery-a:/v --entrypoint /bin/sh "${image}" -c 'printf "2026-11-24T00:00:00Z\n" > /v/template-state/install-started'
+refused a 6b "did not start on it; refusing to change it"
+[[ "$(docker exec drupal-recovery-pg psql -U drupal -d drupal -Atc 'select id from unrelated')" == 42 ]] || fail "case 6b: the unrelated table changed"
+echo "install-recovery: ok 6 an install record never clears a database the install did not start on"
+
+# 7. Nor does it re-provision another finished Drupal site: install a site on
+# a clean database with volume c, then point a volume whose interrupted record
+# belongs elsewhere (a) at it.
+docker exec drupal-recovery-pg psql -U drupal -d drupal -qc 'drop table unrelated'
+docker run --rm -v drupal-recovery-c:/v --entrypoint /bin/sh "${image}" -c 'rm -rf /v/template-state'
+start c
+wait_log "serving on port 80" 300
+drush user:password admin "${other_password}" >/dev/null 2>&1
+docker stop drupal-recovery-web >/dev/null
+[[ "$(docker exec drupal-recovery-pg psql -U drupal -d drupal -Atc "select to_regclass('public.railway_template_install_claim') is null")" == t ]] || fail "case 7: the claim table survived the finished install"
+refused a 7 "refusing to change it"
+start c
+wait_log "serving on port 80" 120
+password_is "${other_password}" || fail "case 7: the other site's administrator was changed"
+echo "install-recovery: ok 7 an install record never re-provisions another finished site"
 echo "install-recovery: passed"

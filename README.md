@@ -59,7 +59,7 @@ Optional variables you can add to the `Drupal CMS` service:
 | Variable | Purpose |
 | --- | --- |
 | `DRUPAL_TRUSTED_HOSTS` | Comma-separated extra host names, such as `www.example.com,example.com`, for custom domains. Drupal refuses requests for any host that is not trusted (HTTP 400). The Railway public and private domains are always trusted. |
-| `DRUPAL_RESET_ADMIN_PASSWORD` | `1` gives user 1 the current `DRUPAL_ADMIN_PASSWORD` on every boot and clears its failed sign-in blocks. Use it to recover a lost password when no mail is configured, then remove it. |
+| `DRUPAL_RESET_ADMIN_PASSWORD` | `1` gives user 1 the current `DRUPAL_ADMIN_PASSWORD` on every boot and clears that account's failed sign-in blocks (the per-address limit stays). Use it to recover a lost password when no mail is configured, then remove it. |
 
 `PostgreSQL` service: `POSTGRES_DB` (`drupal`), `POSTGRES_USER` (`drupal`), `POSTGRES_PASSWORD` (generated) and `PGDATA` (`/var/lib/postgresql/18/docker`, below the volume mount).
 
@@ -71,7 +71,7 @@ The start wrapper refuses to start (exit code 64) if a variable is malformed. It
 
 1. It checks the variables and that a volume is mounted at `/var/lib/drupal`, then prepares the volume's directories.
 2. It waits for PostgreSQL.
-3. On an empty database it runs `drush site:install` with the Drupal CMS Starter site template. Drush gets a throwaway password, and the configured password is then set from the environment, so it never appears in a command line. An install interrupted by a stop or crash is detected on the next boot and run again. A volume that belongs to an installed site is never installed over. A database with unrelated tables is never changed.
+3. On an empty database it runs `drush site:install` with the Drupal CMS Starter site template. Drush gets a throwaway password, and the configured password is then set from the environment, so it never appears in a command line. An install interrupted by a stop or crash is detected on the next boot and run again; the volume's install record and a claim table in the database carry the same random value, so only the database the install started on is ever cleared. A volume that belongs to an installed site is never installed over. A database with unrelated tables is never changed.
 4. On every later boot it runs `drush updatedb` for pending database updates.
 5. It starts Apache and a loop that runs Drupal's cron every five minutes (Scheduler, search indexing, cleanups). The administrator password is removed from their environment.
 

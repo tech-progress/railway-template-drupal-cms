@@ -143,6 +143,22 @@ db_state() {
 }
 mark() { printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${state}/$1.tmp" && mv -f "${state}/$1.tmp" "${state}/$1"; }
 
+# An install binds the volume to the database it started on: the volume's
+# install-started record and a claim table in the database hold the same
+# random nonce. Only a database holding exactly that claim may be cleared or
+# provisioned again; a record left by an interrupted install never authorizes
+# changes to a database that was swapped in afterwards.
+started_nonce() {
+  local line=""
+  [[ -f "${state}/install-started" ]] && IFS= read -r line < "${state}/install-started"
+  [[ "${line}" =~ ^nonce=([0-9a-f]{32})$ ]] && printf '%s' "${BASH_REMATCH[1]}"
+  return 0
+}
+owns_database() {
+  local nonce; nonce="$(started_nonce)"
+  [[ -n "${nonce}" ]] && php "${helpers}/drupal-db.php" owns "${nonce}"
+}
+
 provision() {
   log "setting the administrator account"
   run env DRUPAL_PROVISION_MODE=install "${drush[@]}" php:script "${helpers}/drupal-provision.php" || fail "provisioning the administrator failed"
@@ -150,16 +166,26 @@ provision() {
   [[ "${installed}" == yes ]] || fail "the installer did not record a finished installation"
   mark installed
   rm -f "${state}/install-started"
+  php "${helpers}/drupal-db.php" release || fail "could not remove the install claim"
+  provisioned=1
   log "Drupal CMS is installed; sign in as ${DRUPAL_ADMIN_USER} at /user/login"
 }
 
 install_site() {
   check_admin_settings
-  mark install-started
+  local nonce
   if (( tables > 0 )); then
+    owns_database \
+      || fail "the database has ${tables} tables, and this volume's interrupted install did not start on it; refusing to change it"
+    nonce="$(started_nonce)"
     log "clearing the tables of an interrupted install"
     run php "${helpers}/drupal-db.php" reset || fail "could not clear the interrupted install"
+  else
+    nonce="$(started_nonce)"
+    [[ -n "${nonce}" ]] || nonce="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    printf 'nonce=%s\n' "${nonce}" > "${state}/install-started.tmp" && mv -f "${state}/install-started.tmp" "${state}/install-started"
   fi
+  php "${helpers}/drupal-db.php" claim "${nonce}" || fail "could not record the install claim"
   log "installing Drupal CMS with the Starter site template (first boot)"
   # site:install gets a throwaway password; provision() sets the real one from
   # the environment, so DRUPAL_ADMIN_PASSWORD never appears in a command line.
@@ -173,22 +199,17 @@ install_site() {
   provision
 }
 
+provisioned=0
 db_state
 if [[ -e "${state}/installed" ]]; then
   # This volume belongs to an installed site; never reinstall over it.
   [[ "${installed}" == yes ]] \
     || fail "this volume belongs to an installed site but the database holds no finished Drupal installation (${tables} tables); restore the database, or see SUPPORT.md to start over"
   rm -f "${state}/install-started"
-  # Recovery for a lost administrator password when no mail is configured:
-  # with DRUPAL_RESET_ADMIN_PASSWORD=1, user 1 gets DRUPAL_ADMIN_PASSWORD again
-  # (and its failed-login blocks are cleared) on every boot until it is unset.
-  if [[ "${DRUPAL_RESET_ADMIN_PASSWORD:-0}" == 1 ]]; then
-    [[ "${DRUPAL_ADMIN_PASSWORD:-}" =~ ^[[:graph:]]{16,128}$ ]] || fail "DRUPAL_ADMIN_PASSWORD must be 16-128 printable ASCII characters without spaces"
-    log "DRUPAL_RESET_ADMIN_PASSWORD=1: resetting the password of user 1; remove the variable after signing in"
-    run env DRUPAL_PROVISION_MODE=reset "${drush[@]}" php:script "${helpers}/drupal-provision.php" || fail "resetting the administrator password failed"
-  fi
 elif [[ -e "${state}/install-started" ]]; then
   if [[ "${installed}" == yes ]]; then
+    owns_database \
+      || fail "this volume's interrupted install did not start on this database, which holds another finished Drupal installation; refusing to change it"
     log "resuming an install that finished before the last stop"
     check_admin_settings
     provision
@@ -203,6 +224,17 @@ elif [[ "${installed}" == yes ]]; then
   mark installed
 else
   fail "the database has ${tables} tables but no finished Drupal installation and this volume has no install record; refusing to change it"
+fi
+
+# Recovery for a lost administrator password when no mail is configured:
+# with DRUPAL_RESET_ADMIN_PASSWORD=1, user 1 gets DRUPAL_ADMIN_PASSWORD again
+# (and its failed-login blocks are cleared) on every boot until it is unset,
+# including a boot that adopts an existing database. A boot that has just
+# provisioned the administrator has set that password already.
+if [[ "${DRUPAL_RESET_ADMIN_PASSWORD:-0}" == 1 ]] && (( ! provisioned )); then
+  [[ "${DRUPAL_ADMIN_PASSWORD:-}" =~ ^[[:graph:]]{16,128}$ ]] || fail "DRUPAL_ADMIN_PASSWORD must be 16-128 printable ASCII characters without spaces"
+  log "DRUPAL_RESET_ADMIN_PASSWORD=1: resetting the password of user 1; remove the variable after signing in"
+  run env DRUPAL_PROVISION_MODE=reset "${drush[@]}" php:script "${helpers}/drupal-provision.php" || fail "resetting the administrator password failed"
 fi
 
 log "applying pending database updates"

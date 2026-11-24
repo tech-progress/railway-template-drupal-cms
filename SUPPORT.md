@@ -25,7 +25,7 @@ The administrator is `DRUPAL_ADMIN_USER` (default `admin`), with the password fr
 2. Redeploy. The log shows `resetting the password of user 1`.
 3. Sign in, then remove `DRUPAL_RESET_ADMIN_PASSWORD`; while it is set, every boot resets the password again.
 
-Five failed sign-ins for one account from one address block that combination for six hours (Drupal's flood control); 50 failed sign-ins from one address block it for an hour. The reset above also clears those blocks.
+Five failed sign-ins for one account from one address block that combination for six hours (Drupal's flood control); 50 failed sign-ins from one address block it for an hour. The reset above also clears user 1's per-account blocks; a per-address block expires after the hour.
 
 ## HTTP 400 "The provided host name is not valid for this server"
 
