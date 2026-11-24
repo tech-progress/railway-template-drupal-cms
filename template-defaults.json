@@ -1,0 +1,21 @@
+{
+  "Drupal CMS": {
+    "PORT": "80",
+    "DRUPAL_DATABASE_HOST": "${{PostgreSQL.RAILWAY_PRIVATE_DOMAIN}}",
+    "DRUPAL_DATABASE_PORT": "5432",
+    "DRUPAL_DATABASE_NAME": "${{PostgreSQL.POSTGRES_DB}}",
+    "DRUPAL_DATABASE_USER": "${{PostgreSQL.POSTGRES_USER}}",
+    "DRUPAL_DATABASE_PASSWORD": "${{PostgreSQL.POSTGRES_PASSWORD}}",
+    "DRUPAL_HASH_SALT": "${{secret(64, \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\")}}",
+    "DRUPAL_ADMIN_USER": "admin",
+    "DRUPAL_ADMIN_EMAIL": "admin@example.com",
+    "DRUPAL_ADMIN_PASSWORD": "${{secret(32, \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\")}}",
+    "DRUPAL_SITE_NAME": "Drupal CMS"
+  },
+  "PostgreSQL": {
+    "POSTGRES_DB": "drupal",
+    "POSTGRES_USER": "drupal",
+    "POSTGRES_PASSWORD": "${{secret(32, \"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789\")}}",
+    "PGDATA": "/var/lib/postgresql/18/docker"
+  }
+}

@@ -1,0 +1,101 @@
+# Local stand-in for the Railway graph: the same images, start contract and
+# variables. Two extra local-only pieces:
+#   - volume-init makes each empty volume look like a fresh Railway volume
+#     (root-owned, mode 0755, with lost+found);
+#   - edge plays Railway's edge: it terminates TLS, replaces X-Real-IP and
+#     X-Forwarded-For with "<client>, <edge address>" and sends
+#     X-Forwarded-Proto https. The client address comes from the test-only
+#     X-Test-Client header so the smoke test can act as different visitors;
+#     client-sent X-Forwarded-For, X-Real-IP and Forwarded are discarded, as on
+#     Railway. A client-sent X-Forwarded-Port or X-Forwarded-Prefix passes
+#     through (the worst case, which the image's Apache must neutralise).
+# Drupal's port is also published on loopback, for direct requests that reach
+# it without the edge, like a service on Railway's private network.
+x-limits: &limits
+  cpus: 2
+  pids_limit: 256
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "2"}
+
+services:
+  volume-init:
+    image: postgres:18.7-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
+    entrypoint: ["/bin/sh", "-ec", "for v in /v/*; do if [ -z \"$$(ls -A $$v)\" ]; then mkdir $$v/lost+found; chown 0:0 $$v; chmod 0755 $$v; fi; done"]
+    user: "0"
+    network_mode: none
+    volumes:
+      - {type: volume, source: drupal-data, target: /v/drupal, volume: {nocopy: true}}
+      - {type: volume, source: postgres-data, target: /v/postgres, volume: {nocopy: true}}
+
+  postgres:
+    <<: *limits
+    image: postgres:18.7-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
+    environment:
+      POSTGRES_DB: drupal
+      POSTGRES_USER: drupal
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/18/docker
+    volumes:
+      - {type: volume, source: postgres-data, target: /var/lib/postgresql, volume: {nocopy: true}}
+    depends_on: {volume-init: {condition: service_completed_successfully}}
+    restart: on-failure
+    mem_limit: 512m
+
+  drupal:
+    <<: *limits
+    build: .
+    image: drupal-cms-template:local
+    environment:
+      PORT: "80"
+      DRUPAL_DATABASE_HOST: postgres
+      DRUPAL_DATABASE_PORT: "5432"
+      DRUPAL_DATABASE_NAME: drupal
+      DRUPAL_DATABASE_USER: drupal
+      DRUPAL_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      DRUPAL_HASH_SALT: ${DRUPAL_HASH_SALT:?Set DRUPAL_HASH_SALT}
+      DRUPAL_ADMIN_USER: admin
+      DRUPAL_ADMIN_EMAIL: ${DRUPAL_ADMIN_EMAIL:-admin@example.com}
+      DRUPAL_ADMIN_PASSWORD: ${DRUPAL_ADMIN_PASSWORD:?Set DRUPAL_ADMIN_PASSWORD}
+      DRUPAL_SITE_NAME: Drupal CMS
+      DRUPAL_TRUSTED_HOSTS: ""
+    volumes:
+      - {type: volume, source: drupal-data, target: /var/lib/drupal, volume: {nocopy: true}}
+    ports: ["127.0.0.1:${DRUPAL_DIRECT_PORT:-18711}:80"]
+    depends_on: {volume-init: {condition: service_completed_successfully}}
+    restart: on-failure
+    mem_limit: 1536m
+
+  edge:
+    <<: *limits
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    command: ["caddy", "run", "--adapter", "caddyfile", "--config", "/etc/caddy/edge.Caddyfile"]
+    configs:
+      - {source: edge, target: /etc/caddy/edge.Caddyfile}
+    ports: ["127.0.0.1:${DRUPAL_LOCAL_PORT:-18710}:8443"]
+    mem_limit: 128m
+
+configs:
+  edge:
+    content: |
+      {
+        admin off
+        local_certs
+        skip_install_trust
+        default_sni 127.0.0.1
+      }
+      https://127.0.0.1:8443 {
+        @noclient not header X-Test-Client *
+        request_header @noclient X-Test-Client 203.0.113.50
+        reverse_proxy drupal:80 {
+          header_up -Forwarded
+          header_up X-Real-IP {http.request.header.X-Test-Client}
+          header_up X-Forwarded-For "{http.request.header.X-Test-Client}, 198.51.100.9"
+          header_up X-Forwarded-Proto https
+          header_up -X-Test-Client
+        }
+      }
+
+volumes:
+  drupal-data:
+  postgres-data:

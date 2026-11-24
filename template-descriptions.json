@@ -1,0 +1,21 @@
+{
+  "Drupal CMS": {
+    "PORT": "Port of the image's Apache server, also used by Railway's health check.",
+    "DRUPAL_DATABASE_HOST": "Private address of the PostgreSQL service.",
+    "DRUPAL_DATABASE_PORT": "PostgreSQL port on the private network.",
+    "DRUPAL_DATABASE_NAME": "Database that holds Drupal's content, configuration, users and sessions.",
+    "DRUPAL_DATABASE_USER": "PostgreSQL user Drupal connects as.",
+    "DRUPAL_DATABASE_PASSWORD": "Password of the PostgreSQL user, referenced from the PostgreSQL service.",
+    "DRUPAL_HASH_SALT": "Generated secret Drupal uses for one-time login links, form tokens and other hashes. Changing it invalidates them.",
+    "DRUPAL_ADMIN_USER": "User name of the administrator account created on the first boot.",
+    "DRUPAL_ADMIN_EMAIL": "Email of the administrator account and the site's sender address, set on the first boot. Use your own address.",
+    "DRUPAL_ADMIN_PASSWORD": "Generated password of the administrator account, used only on the first boot. Change it in Drupal after signing in.",
+    "DRUPAL_SITE_NAME": "Site name set on the first boot; change it later under Configuration > Basic site settings."
+  },
+  "PostgreSQL": {
+    "POSTGRES_DB": "Database created on the first boot for Drupal.",
+    "POSTGRES_USER": "PostgreSQL user created on the first boot.",
+    "POSTGRES_PASSWORD": "Generated password of the PostgreSQL user, set on the first boot.",
+    "PGDATA": "Data directory below the volume mount, away from the volume's lost+found."
+  }
+}

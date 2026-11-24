@@ -1,0 +1,11 @@
+*
+!Dockerfile
+!site/composer.json
+!site/composer.lock
+!site/LICENSE.txt
+!site/web/modules/custom/
+!site/web/themes/custom/
+!config/
+!scripts/drupal-start.sh
+!scripts/drupal-db.php
+!scripts/drupal-provision.php
