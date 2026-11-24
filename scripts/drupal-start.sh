@@ -206,6 +206,9 @@ if [[ -e "${state}/installed" ]]; then
   [[ "${installed}" == yes ]] \
     || fail "this volume belongs to an installed site but the database holds no finished Drupal installation (${tables} tables); restore the database, or see SUPPORT.md to start over"
   rm -f "${state}/install-started"
+  # A stop between recording the install and releasing the claim leaves the
+  # claim table behind; drop it.
+  php "${helpers}/drupal-db.php" release || fail "could not remove the install claim"
 elif [[ -e "${state}/install-started" ]]; then
   if [[ "${installed}" == yes ]]; then
     owns_database \

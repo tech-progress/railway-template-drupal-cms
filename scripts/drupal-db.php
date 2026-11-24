@@ -69,14 +69,21 @@ try {
       echo "tables={$tables} installed={$installed}\n";
       exit(0);
 
+    // reset and claim each run in one transaction (PostgreSQL DDL is
+    // transactional), so a crash cannot leave the database without its public
+    // schema, or with a claim table that holds no nonce.
     case 'reset':
+      $pdo->beginTransaction();
       $pdo->exec('DROP SCHEMA public CASCADE');
       $pdo->exec('CREATE SCHEMA public');
+      $pdo->commit();
       exit(0);
 
     case 'claim':
+      $pdo->beginTransaction();
       $pdo->exec('CREATE TABLE IF NOT EXISTS public.railway_template_install_claim (nonce text PRIMARY KEY)');
       $pdo->prepare('INSERT INTO public.railway_template_install_claim (nonce) VALUES (?) ON CONFLICT DO NOTHING')->execute([$nonce]);
+      $pdo->commit();
       exit(0);
 
     case 'owns':

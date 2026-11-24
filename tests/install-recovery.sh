@@ -78,6 +78,8 @@ wait_log "the previous install was interrupted; starting it again"
 wait_log "serving on port 80" 300
 password_is "${admin_password}" || fail "case 1: the administrator does not have the configured password"
 [[ "$(records a)" == "installed " ]] || fail "case 1: records after recovery: $(records a)"
+claim_gone() { [[ "$(docker exec drupal-recovery-pg psql -U drupal -d drupal -Atc "select to_regclass('public.railway_template_install_claim') is null")" == t ]]; }
+claim_gone || fail "case 1: the install claim survived the finished install"
 echo "install-recovery: ok 1 an install killed midway is cleared and repeated"
 
 # 2. Finished install, unfinished provisioning.
@@ -94,6 +96,15 @@ wait_log "resuming an install that finished before the last stop"
 wait_log "serving on port 80" 120
 password_is "${admin_password}" || fail "case 2: provisioning was not repeated"
 [[ "$(records a)" == "installed " ]] || fail "case 2: records after resuming: $(records a)"
+claim_gone || fail "case 2: the install claim survived the resumed install"
+# A stop after the installed record but before the claim was released: the
+# next boot of the installed site drops the leftover claim.
+docker stop drupal-recovery-web >/dev/null
+docker exec drupal-recovery-pg psql -U drupal -d drupal -qc \
+  "create table railway_template_install_claim (nonce text primary key); insert into railway_template_install_claim values ('00112233445566778899aabbccddeeff')"
+start a
+wait_log "serving on port 80" 120
+claim_gone || fail "case 2: a leftover claim on an installed site was not released"
 echo "install-recovery: ok 2 a finished install with unfinished provisioning is resumed"
 
 # 3. A complete database and a volume without records: adopted, password kept.
